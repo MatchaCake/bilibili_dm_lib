@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -26,6 +27,7 @@ type roomConn struct {
 	cookies     string
 	dispatch    func(roomID int64, pkt *Packet) // callback into client for event dispatch
 	logger      *slog.Logger
+	wsMu        sync.Mutex // serialises WebSocket writes (gorilla requires single-writer)
 }
 
 // run connects to the room and reads messages until the context is cancelled.
@@ -47,10 +49,12 @@ func (rc *roomConn) run(ctx context.Context) {
 			"backoff", delay,
 		)
 
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(delay):
+		case <-timer.C:
 		}
 	}
 }
@@ -94,7 +98,10 @@ func (rc *roomConn) connect(ctx context.Context) error {
 
 	// Send auth packet.
 	authPkt := buildAuthPacket(rc.realRoomID, dInfo.Token)
-	if err := ws.WriteMessage(websocket.BinaryMessage, authPkt); err != nil {
+	rc.wsMu.Lock()
+	err = ws.WriteMessage(websocket.BinaryMessage, authPkt)
+	rc.wsMu.Unlock()
+	if err != nil {
 		return fmt.Errorf("send auth: %w", err)
 	}
 
@@ -137,7 +144,10 @@ func (rc *roomConn) heartbeatLoop(ctx context.Context, ws *websocket.Conn) {
 			return
 		case <-ticker.C:
 			hb := buildHeartbeatPacket()
-			if err := ws.WriteMessage(websocket.BinaryMessage, hb); err != nil {
+			rc.wsMu.Lock()
+			err := ws.WriteMessage(websocket.BinaryMessage, hb)
+			rc.wsMu.Unlock()
+			if err != nil {
 				rc.logger.Warn("heartbeat send failed", "room", rc.shortRoomID, "error", err)
 				return
 			}
@@ -145,8 +155,8 @@ func (rc *roomConn) heartbeatLoop(ctx context.Context, ws *websocket.Conn) {
 	}
 }
 
-// handlePacket is the default dispatch logic used by roomConn.
-// The client overrides this via the dispatch field.
+// handleHeartbeatReply parses the 4-byte big-endian popularity count
+// from a heartbeat reply packet body.
 func handleHeartbeatReply(body []byte) *HeartbeatData {
 	if len(body) >= 4 {
 		return &HeartbeatData{

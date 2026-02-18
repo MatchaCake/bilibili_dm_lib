@@ -61,7 +61,11 @@ func buildAuthPacket(roomID int64, token string) []byte {
 		"key":      token,
 		"protover": 3,
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		// Should never happen with primitive values; panic to surface programming errors.
+		panic(fmt.Sprintf("buildAuthPacket: marshal auth body: %v", err))
+	}
 	return encodePacket(&Packet{
 		Protocol: ProtoSpecial,
 		OpType:   OpCertificate,
