@@ -35,6 +35,8 @@ type Client struct {
 	rooms      map[int64]context.CancelFunc // shortRoomID → cancel
 	roomsMu    sync.Mutex
 	parentCtx  context.Context
+	parentMu   sync.Mutex // protects parentCtx
+	wg         sync.WaitGroup
 	httpClient *http.Client
 
 	// Sender (lazily initialised on first SendDanmaku call).
@@ -139,23 +141,24 @@ func (c *Client) Subscribe() <-chan Event {
 
 // Start connects to all configured rooms and blocks until ctx is cancelled.
 func (c *Client) Start(ctx context.Context) error {
+	c.parentMu.Lock()
 	c.parentCtx = ctx
+	c.parentMu.Unlock()
 
 	if len(c.config.roomIDs) == 0 {
 		return fmt.Errorf("no rooms configured; use WithRoomID or AddRoom")
 	}
 
-	var wg sync.WaitGroup
 	for _, id := range c.config.roomIDs {
-		wg.Add(1)
+		c.wg.Add(1)
 		go func(roomID int64) {
-			defer wg.Done()
+			defer c.wg.Done()
 			c.startRoom(ctx, roomID)
 		}(id)
 	}
 
 	<-ctx.Done()
-	wg.Wait()
+	c.wg.Wait()
 
 	// Close subscriber channels.
 	c.mu.Lock()
@@ -170,9 +173,15 @@ func (c *Client) Start(ctx context.Context) error {
 
 // AddRoom dynamically adds a room to the client. Safe to call after Start.
 func (c *Client) AddRoom(roomID int64) error {
-	if c.parentCtx == nil {
+	c.parentMu.Lock()
+	ctx := c.parentCtx
+	c.parentMu.Unlock()
+
+	if ctx == nil {
 		// Not yet started — just add to config.
+		c.roomsMu.Lock()
 		c.config.roomIDs = append(c.config.roomIDs, roomID)
+		c.roomsMu.Unlock()
 		return nil
 	}
 
@@ -181,9 +190,15 @@ func (c *Client) AddRoom(roomID int64) error {
 		c.roomsMu.Unlock()
 		return fmt.Errorf("room %d already connected", roomID)
 	}
+	// Reserve the slot so concurrent AddRoom calls for the same ID are rejected.
+	c.rooms[roomID] = nil
 	c.roomsMu.Unlock()
 
-	go c.startRoom(c.parentCtx, roomID)
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		c.startRoom(ctx, roomID)
+	}()
 	return nil
 }
 
@@ -192,7 +207,9 @@ func (c *Client) RemoveRoom(roomID int64) {
 	c.roomsMu.Lock()
 	defer c.roomsMu.Unlock()
 	if cancel, ok := c.rooms[roomID]; ok {
-		cancel()
+		if cancel != nil {
+			cancel()
+		}
 		delete(c.rooms, roomID)
 	}
 }

@@ -97,10 +97,12 @@ func (s *Sender) waitCooldown(ctx context.Context, roomID int64) error {
 		wait := s.config.cooldown - now.Sub(last)
 		if wait > 0 {
 			s.logger.Debug("rate limit wait", "room", roomID, "wait", wait)
+			timer := time.NewTimer(wait)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(wait):
+			case <-timer.C:
 			}
 		}
 	}
@@ -134,6 +136,10 @@ func (s *Sender) sendOne(ctx context.Context, roomID int64, msg string, mode Dan
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("send HTTP %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read send response: %w", err)
@@ -165,6 +171,9 @@ func (s *Sender) sendOne(ctx context.Context, roomID int64, msg string, mode Dan
 
 // splitMessage breaks a message into chunks of at most maxLen runes.
 func splitMessage(msg string, maxLen int) []string {
+	if maxLen <= 0 {
+		return []string{msg}
+	}
 	runes := []rune(msg)
 	if len(runes) <= maxLen {
 		return []string{msg}

@@ -42,6 +42,10 @@ func getRoomInfo(ctx context.Context, hc *http.Client, roomID int64, cookies str
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("room_init HTTP %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read room_init response: %w", err)
@@ -77,6 +81,10 @@ func getDanmuInfo(ctx context.Context, hc *http.Client, realRoomID int64, cookie
 		return nil, fmt.Errorf("getDanmuInfo request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("getDanmuInfo HTTP %d", resp.StatusCode)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
