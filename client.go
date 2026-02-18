@@ -11,6 +11,7 @@ import (
 )
 
 // Client subscribes to danmaku streams from one or more Bilibili live rooms.
+// It can also send danmaku via the built-in Sender (see SendDanmaku).
 type Client struct {
 	mu     sync.RWMutex
 	config clientConfig
@@ -35,6 +36,10 @@ type Client struct {
 	roomsMu    sync.Mutex
 	parentCtx  context.Context
 	httpClient *http.Client
+
+	// Sender (lazily initialised on first SendDanmaku call).
+	sender     *Sender
+	senderOnce sync.Once
 }
 
 // NewClient creates a new danmaku client.
@@ -309,6 +314,29 @@ func (c *Client) publishEvent(ev Event) {
 			// Channel full — drop to avoid blocking.
 		}
 	}
+}
+
+// SendDanmaku sends a danmaku message to the given room.
+// It uses the Client's credentials (set via WithCookie) and sender settings
+// (WithMaxDanmakuLength, WithSendCooldown). Long messages are auto-split.
+func (c *Client) SendDanmaku(ctx context.Context, roomID int64, msg string) error {
+	c.senderOnce.Do(c.initSender)
+	return c.sender.Send(ctx, roomID, msg)
+}
+
+func (c *Client) initSender() {
+	var senderOpts []SenderOption
+	if c.config.sessdata != "" {
+		senderOpts = append(senderOpts, WithSenderCookie(c.config.sessdata, c.config.biliJCT))
+	}
+	if c.config.maxLength > 0 {
+		senderOpts = append(senderOpts, WithMaxLength(c.config.maxLength))
+	}
+	if c.config.cooldown > 0 {
+		senderOpts = append(senderOpts, WithCooldown(c.config.cooldown))
+	}
+	senderOpts = append(senderOpts, WithSenderHTTPClient(c.httpClient))
+	c.sender = NewSender(senderOpts...)
 }
 
 // extractCMD pulls the "cmd" field from a raw JSON command body.

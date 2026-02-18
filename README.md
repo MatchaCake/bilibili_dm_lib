@@ -1,14 +1,16 @@
 # bilibili_dm_lib
 
-Go library for subscribing to Bilibili live room danmaku (弹幕) streams via WebSocket.
+Go library for subscribing to and sending Bilibili live room danmaku (弹幕) via WebSocket and HTTP API.
 
 ## Features
 
 - **Pub/Sub API** — typed callbacks (`OnDanmaku`, `OnGift`, etc.) and channel-based subscription
+- **Send danmaku** — send messages via `Client.SendDanmaku` or standalone `Sender`
+- **Auto-split** — long messages split into chunks with rate limiting
 - **Multiple rooms** — subscribe to many rooms with a single client
 - **Auto-reconnect** — exponential backoff on disconnect
 - **Brotli + Zlib** — handles all Bilibili compression formats
-- **Thread-safe** — register handlers from any goroutine
+- **Thread-safe** — register handlers and send from any goroutine
 - **Cookie support** — optional authenticated access for richer data
 - **Clean shutdown** — context cancellation propagates everywhere
 
@@ -100,6 +102,50 @@ client := dm.NewClient(
 )
 ```
 
+### Sending Danmaku
+
+#### Via Client
+
+```go
+client := dm.NewClient(
+    dm.WithRoomID(510),
+    dm.WithCookie("your_SESSDATA", "your_bili_jct"),
+)
+
+// Send after the client is started.
+go func() {
+    ctx := context.Background()
+    err := client.SendDanmaku(ctx, 510, "Hello from Go!")
+    if err != nil {
+        log.Println("send failed:", err)
+    }
+}()
+
+client.Start(ctx)
+```
+
+#### Standalone Sender
+
+Use `NewSender` when you only need to send without subscribing:
+
+```go
+sender := dm.NewSender(
+    dm.WithSenderCookie("your_SESSDATA", "your_bili_jct"),
+    dm.WithMaxLength(30), // UL20+ users can send up to 30 chars
+    dm.WithCooldown(3 * time.Second),
+)
+
+ctx := context.Background()
+
+// Send with default scroll mode.
+err := sender.Send(ctx, 510, "Hello!")
+
+// Send with specific display mode.
+err = sender.SendWithMode(ctx, 510, "Pinned!", dm.ModeTop)
+```
+
+Long messages are automatically split into chunks and sent with rate-limiting pauses between each chunk.
+
 ## Event Types
 
 | CMD | Callback | Struct | Description |
@@ -127,16 +173,19 @@ go run ./cmd/example -room 510 -sessdata YOUR_SESSDATA -bili-jct YOUR_BILI_JCT
 ## Architecture
 
 ```
-Client (pub/sub hub)
+Client (pub/sub hub + sender)
 ├── roomConn (room 510)     ← goroutine: connect → auth → read loop
 │   ├── heartbeat goroutine ← sends heartbeat every 30s
 │   └── auto-reconnect      ← exponential backoff on failure
 ├── roomConn (room 21452505)
 │   └── ...
-└── dispatch
-    ├── typed callbacks (OnDanmaku, OnGift, ...)
-    ├── raw event callback (OnRawEvent)
-    └── channel subscribers (Subscribe)
+├── dispatch
+│   ├── typed callbacks (OnDanmaku, OnGift, ...)
+│   ├── raw event callback (OnRawEvent)
+│   └── channel subscribers (Subscribe)
+└── Sender (lazy init)      ← SendDanmaku → HTTP POST /msg/send
+    ├── auto-split long messages
+    └── per-room rate limiting
 ```
 
 ## Protocol
