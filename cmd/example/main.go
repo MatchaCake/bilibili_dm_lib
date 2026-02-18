@@ -74,6 +74,26 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	// --- Send danmaku example (uncomment to use) ---
+	// Requires valid SESSDATA and bili_jct cookies.
+	//
+	// go func() {
+	// 	time.Sleep(3 * time.Second) // wait for connection
+	// 	if err := client.SendDanmaku(ctx, *roomID, "Hello from bilibili_dm_lib!"); err != nil {
+	// 		slog.Error("send danmaku failed", "error", err)
+	// 	}
+	// }()
+	//
+	// Standalone sender (without subscribing):
+	//
+	// sender := dm.NewSender(
+	// 	dm.WithSenderCookie("your_SESSDATA", "your_bili_jct"),
+	// 	dm.WithMaxLength(30), // UL20+ users
+	// )
+	// if err := sender.Send(ctx, 510, "Hello!"); err != nil {
+	// 	slog.Error("send failed", "error", err)
+	// }
+
 	if err := client.Start(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("client stopped with error", "error", err)
 		os.Exit(1)

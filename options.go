@@ -1,6 +1,9 @@
 package dm
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 // Option configures a Client.
 type Option func(*clientConfig)
@@ -10,6 +13,10 @@ type clientConfig struct {
 	sessdata   string
 	biliJCT    string
 	httpClient *http.Client
+
+	// Sender options (used by Client.SendDanmaku).
+	maxLength int
+	cooldown  time.Duration
 }
 
 // WithRoomID adds a room to connect to on Start.
@@ -32,5 +39,21 @@ func WithCookie(sessdata, biliJCT string) Option {
 func WithHTTPClient(hc *http.Client) Option {
 	return func(c *clientConfig) {
 		c.httpClient = hc
+	}
+}
+
+// WithMaxDanmakuLength sets the maximum rune length per danmaku message
+// for the Client's built-in Sender. Default is 20; UL20+ users can set 30.
+func WithMaxDanmakuLength(n int) Option {
+	return func(c *clientConfig) {
+		c.maxLength = n
+	}
+}
+
+// WithSendCooldown sets the minimum interval between sends to the same room
+// for the Client's built-in Sender. Default is 5 seconds.
+func WithSendCooldown(d time.Duration) Option {
+	return func(c *clientConfig) {
+		c.cooldown = d
 	}
 }
