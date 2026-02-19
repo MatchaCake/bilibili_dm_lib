@@ -55,11 +55,15 @@ func encodePacket(p *Packet) []byte {
 
 // buildAuthPacket creates the authentication packet sent after WebSocket connect.
 func buildAuthPacket(roomID int64, token string) []byte {
+	protover := 3
+	if token == "" {
+		protover = 2 // fallback to zlib when no auth token
+	}
 	body := map[string]interface{}{
 		"uid":      0,
 		"roomid":   roomID,
 		"key":      token,
-		"protover": 3,
+		"protover": protover,
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
