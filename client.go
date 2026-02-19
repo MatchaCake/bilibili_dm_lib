@@ -227,9 +227,9 @@ func (c *Client) startRoom(ctx context.Context, roomID int64) {
 		c.roomsMu.Unlock()
 	}()
 
-	cookies := ""
+	cookies := "buvid3=" + generateBuvid3()
 	if c.config.sessdata != "" {
-		cookies = fmt.Sprintf("SESSDATA=%s; bili_jct=%s", c.config.sessdata, c.config.biliJCT)
+		cookies = fmt.Sprintf("SESSDATA=%s; bili_jct=%s; buvid3=%s", c.config.sessdata, c.config.biliJCT, generateBuvid3())
 	}
 
 	rc := &roomConn{
@@ -369,3 +369,13 @@ func extractCMD(body []byte) string {
 	return partial.CMD
 }
 
+
+// generateBuvid3 creates a random buvid3 device identifier.
+// Format: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXXinfoc
+func generateBuvid3() string {
+	b := make([]byte, 16)
+	for i := range b {
+		b[i] = byte(time.Now().UnixNano()>>(i*4)) ^ byte(i*37+13)
+	}
+	return fmt.Sprintf("%X-%X-%X-%X-%Xinfoc", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
