@@ -371,11 +371,22 @@ func extractCMD(body []byte) string {
 
 
 // generateBuvid3 creates a random buvid3 device identifier.
-// Format: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXXinfoc
+// Format: UUID v4 + "infoc" (e.g. "1702EE27-7022-473C-8F6B-4BC9DD6AE419infoc")
 func generateBuvid3() string {
 	b := make([]byte, 16)
+	// Use time-based pseudo-random (good enough for device ID)
+	now := time.Now().UnixNano()
 	for i := range b {
-		b[i] = byte(time.Now().UnixNano()>>(i*4)) ^ byte(i*37+13)
+		now = now*6364136223846793005 + 1442695040888963407 // LCG
+		b[i] = byte(now >> 32)
 	}
-	return fmt.Sprintf("%X-%X-%X-%X-%Xinfoc", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 1
+	return fmt.Sprintf("%08X-%04X-%04X-%04X-%012Xinfoc",
+		uint32(b[0])<<24|uint32(b[1])<<16|uint32(b[2])<<8|uint32(b[3]),
+		uint16(b[4])<<8|uint16(b[5]),
+		uint16(b[6])<<8|uint16(b[7]),
+		uint16(b[8])<<8|uint16(b[9]),
+		uint64(b[10])<<40|uint64(b[11])<<32|uint64(b[12])<<24|uint64(b[13])<<16|uint64(b[14])<<8|uint64(b[15]),
+	)
 }
