@@ -71,14 +71,17 @@ func (rc *roomConn) connect(ctx context.Context) error {
 		rc.logger.Info("resolved room ID", "short", rc.shortRoomID, "real", rc.realRoomID)
 	}
 
-	// Get danmu connection info.
+	// Get danmu connection info; fall back to default server on failure.
+	var wssURL, token string
 	dInfo, err := getDanmuInfo(ctx, rc.httpClient, rc.realRoomID, rc.cookies)
 	if err != nil {
-		return fmt.Errorf("get danmu info: %w", err)
+		rc.logger.Warn("getDanmuInfo failed, using default server", "room", rc.realRoomID, "err", err)
+		wssURL = "wss://broadcastlv.chat.bilibili.com/sub"
+		token = ""
+	} else {
+		wssURL = fmt.Sprintf("wss://%s:%d/sub", dInfo.Host, dInfo.Port)
+		token = dInfo.Token
 	}
-
-	// Connect WebSocket.
-	wssURL := fmt.Sprintf("wss://%s:%d/sub", dInfo.Host, dInfo.Port)
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
@@ -97,7 +100,7 @@ func (rc *roomConn) connect(ctx context.Context) error {
 	rc.logger.Info("connected", "room", rc.shortRoomID, "url", wssURL)
 
 	// Send auth packet.
-	authPkt := buildAuthPacket(rc.realRoomID, dInfo.Token)
+	authPkt := buildAuthPacket(rc.realRoomID, token)
 	rc.wsMu.Lock()
 	err = ws.WriteMessage(websocket.BinaryMessage, authPkt)
 	rc.wsMu.Unlock()
