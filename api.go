@@ -68,27 +68,51 @@ func getRoomInfo(ctx context.Context, hc *http.Client, roomID int64, cookies str
 }
 
 // getDanmuInfo fetches the WebSocket server host and auth token.
+// On -352 (risk control), retries with wbi signature.
 func getDanmuInfo(ctx context.Context, hc *http.Client, realRoomID int64, cookies string) (*danmuInfo, error) {
-	url := fmt.Sprintf(danmuInfoURL, realRoomID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	info, code, err := getDanmuInfoRaw(ctx, hc, realRoomID, cookies, "")
+	if err != nil && code == -352 {
+		// Retry with wbi signature
+		imgKey, subKey, wbiErr := getWbiKeys(ctx, hc, cookies)
+		if wbiErr == nil {
+			mixinKey := getMixinKey(imgKey, subKey)
+			params := map[string]string{
+				"id":   fmt.Sprintf("%d", realRoomID),
+				"type": "0",
+			}
+			signedQuery := signWbi(params, mixinKey)
+			info, _, err = getDanmuInfoRaw(ctx, hc, realRoomID, cookies, signedQuery)
+		}
+	}
+	return info, err
+}
+
+func getDanmuInfoRaw(ctx context.Context, hc *http.Client, realRoomID int64, cookies string, signedQuery string) (*danmuInfo, int, error) {
+	var reqURL string
+	if signedQuery != "" {
+		reqURL = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?" + signedQuery
+	} else {
+		reqURL = fmt.Sprintf(danmuInfoURL, realRoomID)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	setCommonHeaders(req, cookies)
 
 	resp, err := hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("getDanmuInfo request: %w", err)
+		return nil, 0, fmt.Errorf("getDanmuInfo request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("getDanmuInfo HTTP %d", resp.StatusCode)
+		return nil, 0, fmt.Errorf("getDanmuInfo HTTP %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read getDanmuInfo response: %w", err)
+		return nil, 0, fmt.Errorf("read getDanmuInfo response: %w", err)
 	}
 
 	var result struct {
@@ -102,10 +126,10 @@ func getDanmuInfo(ctx context.Context, hc *http.Client, realRoomID int64, cookie
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("parse getDanmuInfo: %w", err)
+		return nil, 0, fmt.Errorf("parse getDanmuInfo: %w", err)
 	}
 	if result.Code != 0 {
-		return nil, fmt.Errorf("getDanmuInfo code %d", result.Code)
+		return nil, result.Code, fmt.Errorf("getDanmuInfo code %d", result.Code)
 	}
 
 	info := &danmuInfo{
@@ -118,7 +142,7 @@ func getDanmuInfo(ctx context.Context, hc *http.Client, realRoomID int64, cookie
 		info.Port = result.Data.HostList[0].WSSPort
 	}
 
-	return info, nil
+	return info, 0, nil
 }
 
 func setCommonHeaders(req *http.Request, cookies string) {
