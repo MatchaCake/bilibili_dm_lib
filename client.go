@@ -232,8 +232,18 @@ func (c *Client) startRoom(ctx context.Context, roomID int64) {
 		cookies = fmt.Sprintf("SESSDATA=%s; bili_jct=%s; buvid3=%s", c.config.sessdata, c.config.biliJCT, generateBuvid3())
 	}
 
+	// Resolve UID if not configured
+	uid := c.config.uid
+	if uid == 0 && c.config.sessdata != "" {
+		if navUID, err := getNavUID(roomCtx, c.httpClient, cookies); err == nil {
+			uid = navUID
+			c.logger.Info("resolved UID from nav", "uid", uid)
+		}
+	}
+
 	rc := &roomConn{
 		shortRoomID: roomID,
+		uid:         uid,
 		httpClient:  c.httpClient,
 		cookies:     cookies,
 		dispatch:    c.dispatchPacket,

@@ -121,3 +121,33 @@ func sanitizeWbiValue(s string) string {
 	}
 	return b.String()
 }
+
+// getNavUID fetches the current user's UID from the nav API.
+func getNavUID(ctx context.Context, hc *http.Client, cookies string) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.bilibili.com/x/web-interface/nav", nil)
+	if err != nil {
+		return 0, err
+	}
+	setCommonHeaders(req, cookies)
+
+	resp, err := hc.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	var result struct {
+		Data struct {
+			Mid int64 `json:"mid"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+	return result.Data.Mid, nil
+}
