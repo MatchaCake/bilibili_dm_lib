@@ -97,7 +97,7 @@ func (rc *roomConn) connect(ctx context.Context) error {
 	}
 	defer ws.Close()
 
-	rc.logger.Info("connected", "room", rc.shortRoomID, "url", wssURL)
+	rc.logger.Info("connected", "room", rc.shortRoomID, "url", wssURL, "token_len", len(token))
 
 	// Send auth packet.
 	authPkt := buildAuthPacket(rc.realRoomID, token)
