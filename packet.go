@@ -60,10 +60,13 @@ func buildAuthPacket(roomID int64, token string) []byte {
 		protover = 2 // fallback to zlib when no auth token
 	}
 	body := map[string]interface{}{
-		"uid":      0,
-		"roomid":   roomID,
-		"key":      token,
-		"protover": protover,
+		"uid":       0,
+		"roomid":    roomID,
+		"key":       token,
+		"protover":  protover,
+		"platform":  "web",
+		"type":      2,
+		"buvid":     generateBuvid3(),
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
