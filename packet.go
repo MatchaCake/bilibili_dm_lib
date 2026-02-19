@@ -54,13 +54,13 @@ func encodePacket(p *Packet) []byte {
 }
 
 // buildAuthPacket creates the authentication packet sent after WebSocket connect.
-func buildAuthPacket(roomID int64, token string) []byte {
+func buildAuthPacket(roomID int64, token string, uid int64) []byte {
 	protover := 3
 	if token == "" {
 		protover = 2 // fallback to zlib when no auth token
 	}
 	body := map[string]interface{}{
-		"uid":       0,
+		"uid":       uid,
 		"roomid":    roomID,
 		"key":       token,
 		"protover":  protover,

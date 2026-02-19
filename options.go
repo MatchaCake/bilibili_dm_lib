@@ -12,11 +12,20 @@ type clientConfig struct {
 	roomIDs    []int64
 	sessdata   string
 	biliJCT    string
+	uid        int64
 	httpClient *http.Client
 
 	// Sender options (used by Client.SendDanmaku).
 	maxLength int
 	cooldown  time.Duration
+}
+
+// WithUID sets the user ID for authentication.
+// If not set, it will be fetched from the nav API.
+func WithUID(uid int64) Option {
+	return func(c *clientConfig) {
+		c.uid = uid
+	}
 }
 
 // WithRoomID adds a room to connect to on Start.

@@ -23,6 +23,7 @@ const (
 type roomConn struct {
 	shortRoomID int64
 	realRoomID  int64
+	uid         int64
 	httpClient  *http.Client
 	cookies     string
 	dispatch    func(roomID int64, pkt *Packet) // callback into client for event dispatch
@@ -100,7 +101,7 @@ func (rc *roomConn) connect(ctx context.Context) error {
 	rc.logger.Info("connected", "room", rc.shortRoomID, "url", wssURL, "token_len", len(token))
 
 	// Send auth packet.
-	authPkt := buildAuthPacket(rc.realRoomID, token)
+	authPkt := buildAuthPacket(rc.realRoomID, token, rc.uid)
 	rc.wsMu.Lock()
 	err = ws.WriteMessage(websocket.BinaryMessage, authPkt)
 	rc.wsMu.Unlock()
