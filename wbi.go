@@ -38,6 +38,10 @@ func getWbiKeys(ctx context.Context, hc *http.Client, cookies string) (imgKey, s
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("nav HTTP %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", "", fmt.Errorf("read nav response: %w", err)
@@ -132,13 +136,17 @@ func getNavUID(ctx context.Context, hc *http.Client, cookies string) (int64, err
 
 	resp, err := hc.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("nav request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("nav HTTP %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("read nav response: %w", err)
 	}
 
 	var result struct {
@@ -147,7 +155,7 @@ func getNavUID(ctx context.Context, hc *http.Client, cookies string) (int64, err
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("parse nav: %w", err)
 	}
 	return result.Data.Mid, nil
 }

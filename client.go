@@ -3,7 +3,6 @@ package dm
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -228,9 +227,11 @@ func (c *Client) startRoom(ctx context.Context, roomID int64) {
 		c.roomsMu.Unlock()
 	}()
 
-	cookies := "buvid3=" + generateBuvid3()
+	var cookies string
 	if c.config.sessdata != "" {
 		cookies = fmt.Sprintf("SESSDATA=%s; bili_jct=%s; buvid3=%s", c.config.sessdata, c.config.biliJCT, generateBuvid3())
+	} else {
+		cookies = "buvid3=" + generateBuvid3()
 	}
 
 	// Resolve UID if not configured
@@ -277,10 +278,9 @@ func (c *Client) dispatchPacket(roomID int64, pkt *Packet) {
 }
 
 func (c *Client) dispatchCommand(roomID int64, body []byte) {
-	event := parseCommandPacket(roomID, body)
+	cmd, event := parseCommandPacket(roomID, body)
 
 	// Always fire raw handlers.
-	cmd := extractCMD(body)
 	c.mu.RLock()
 	for _, fn := range c.onRaw {
 		fn(cmd, body)
@@ -366,16 +366,6 @@ func (c *Client) initSender() {
 	senderOpts = append(senderOpts, WithSenderHTTPClient(c.httpClient))
 	c.sender = NewSender(senderOpts...)
 }
-
-// extractCMD pulls the "cmd" field from a raw JSON command body.
-func extractCMD(body []byte) string {
-	var partial struct {
-		CMD string `json:"cmd"`
-	}
-	_ = json.Unmarshal(body, &partial)
-	return partial.CMD
-}
-
 
 // generateBuvid3 creates a random buvid3 device identifier.
 // Format: UUID v4 + "infoc" (e.g. "1702EE27-7022-473C-8F6B-4BC9DD6AE419infoc")

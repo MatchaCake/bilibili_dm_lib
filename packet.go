@@ -59,7 +59,7 @@ func buildAuthPacket(roomID int64, token string, uid int64) []byte {
 	if token == "" {
 		protover = 2 // fallback to zlib when no auth token
 	}
-	body := map[string]interface{}{
+	body := map[string]any{
 		"uid":       uid,
 		"roomid":    roomID,
 		"key":       token,
