@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -172,7 +171,7 @@ func handleHeartbeatReply(body []byte) *HeartbeatData {
 }
 
 func backoff(attempt int) time.Duration {
-	d := baseBackoff * time.Duration(math.Pow(2, float64(attempt-1)))
+	d := baseBackoff << min(attempt-1, 31)
 	if d > maxBackoff {
 		d = maxBackoff
 	}

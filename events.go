@@ -91,31 +91,31 @@ type rawCmd struct {
 	Data json.RawMessage `json:"data,omitempty"` // most others use data object
 }
 
-// parseCommandPacket turns a raw JSON command body into an Event.
-// Returns nil if the command is not recognised (caller can use OnRawEvent).
-func parseCommandPacket(roomID int64, body []byte) *Event {
+// parseCommandPacket turns a raw JSON command body into (cmd, event).
+// The event is nil if the command is not recognised (caller can use OnRawEvent).
+func parseCommandPacket(roomID int64, body []byte) (string, *Event) {
 	var cmd rawCmd
 	if err := json.Unmarshal(body, &cmd); err != nil {
-		return nil
+		return "", nil
 	}
 
 	switch cmd.CMD {
 	case "DANMU_MSG":
-		return parseDanmaku(roomID, cmd.Info)
+		return cmd.CMD, parseDanmaku(roomID, cmd.Info)
 	case "SEND_GIFT":
-		return parseGift(roomID, cmd.Data)
+		return cmd.CMD, parseGift(roomID, cmd.Data)
 	case "SUPER_CHAT_MESSAGE":
-		return parseSuperChat(roomID, cmd.Data)
+		return cmd.CMD, parseSuperChat(roomID, cmd.Data)
 	case "GUARD_BUY":
-		return parseGuardBuy(roomID, cmd.Data)
+		return cmd.CMD, parseGuardBuy(roomID, cmd.Data)
 	case "LIVE":
-		return &Event{RoomID: roomID, Type: EventLive, Data: &LiveEvent{RoomID: roomID, Live: true}}
+		return cmd.CMD, &Event{RoomID: roomID, Type: EventLive, Data: &LiveEvent{RoomID: roomID, Live: true}}
 	case "PREPARING":
-		return &Event{RoomID: roomID, Type: EventPreparing, Data: &LiveEvent{RoomID: roomID, Live: false}}
+		return cmd.CMD, &Event{RoomID: roomID, Type: EventPreparing, Data: &LiveEvent{RoomID: roomID, Live: false}}
 	case "INTERACT_WORD":
-		return parseInteractWord(roomID, cmd.Data)
+		return cmd.CMD, parseInteractWord(roomID, cmd.Data)
 	default:
-		return nil // unrecognised — will be dispatched as raw event
+		return cmd.CMD, nil // unrecognised — will be dispatched as raw event
 	}
 }
 
