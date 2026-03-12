@@ -36,11 +36,16 @@ type roomConn struct {
 func (rc *roomConn) run(ctx context.Context) {
 	var attempt int
 	for {
+		connStart := time.Now()
 		err := rc.connect(ctx)
 		if ctx.Err() != nil {
 			return // context cancelled — clean shutdown
 		}
 
+		// Reset backoff if the connection was stable (>1 min).
+		if time.Since(connStart) > time.Minute {
+			attempt = 0
+		}
 		attempt++
 		delay := backoff(attempt)
 		rc.logger.Warn("disconnected, reconnecting",
@@ -116,10 +121,6 @@ func (rc *roomConn) connect(ctx context.Context) error {
 
 	// Read loop.
 	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
 		_, message, err := ws.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("read: %w", err)

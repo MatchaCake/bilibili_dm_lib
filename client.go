@@ -2,6 +2,7 @@ package dm
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -368,14 +369,10 @@ func (c *Client) initSender() {
 
 // extractCMD pulls the "cmd" field from a raw JSON command body.
 func extractCMD(body []byte) string {
-	// Fast path: avoid full JSON parse.
 	var partial struct {
 		CMD string `json:"cmd"`
 	}
-	if len(body) > 4 {
-		// Ignore error — best effort.
-		_ = json.Unmarshal(body, &partial)
-	}
+	_ = json.Unmarshal(body, &partial)
 	return partial.CMD
 }
 
@@ -384,12 +381,7 @@ func extractCMD(body []byte) string {
 // Format: UUID v4 + "infoc" (e.g. "1702EE27-7022-473C-8F6B-4BC9DD6AE419infoc")
 func generateBuvid3() string {
 	b := make([]byte, 16)
-	// Use time-based pseudo-random (good enough for device ID)
-	now := time.Now().UnixNano()
-	for i := range b {
-		now = now*6364136223846793005 + 1442695040888963407 // LCG
-		b[i] = byte(now >> 32)
-	}
+	_, _ = rand.Read(b)
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // variant 1
 	return fmt.Sprintf("%08X-%04X-%04X-%04X-%012Xinfoc",

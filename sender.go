@@ -158,11 +158,11 @@ func (s *Sender) sendOne(ctx context.Context, roomID int64, msg string, mode Dan
 	s.lastSend.Store(roomID, time.Now())
 
 	if result.Code != 0 {
-		msg := result.Message
-		if msg == "" {
-			msg = result.Msg
+		errMsg := result.Message
+		if errMsg == "" {
+			errMsg = result.Msg
 		}
-		return &SendError{Code: result.Code, Message: msg}
+		return &SendError{Code: result.Code, Message: errMsg}
 	}
 
 	s.logger.Debug("danmaku sent", "room", roomID, "msg", msg)
