@@ -139,7 +139,7 @@ func parseDanmaku(roomID int64, raw json.RawMessage) *Event {
 		_ = json.Unmarshal(userArr[1], &d.Sender)
 	}
 
-	// info[0][4] = timestamp (seconds)
+	// info[0][4] = timestamp (milliseconds)
 	var metaArr []json.RawMessage
 	if err := json.Unmarshal(info[0], &metaArr); err == nil && len(metaArr) > 4 {
 		var ts int64
