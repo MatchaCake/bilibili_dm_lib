@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -42,7 +41,7 @@ func getWbiKeys(ctx context.Context, hc *http.Client, cookies string) (imgKey, s
 		return "", "", fmt.Errorf("nav HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp.Body)
 	if err != nil {
 		return "", "", fmt.Errorf("read nav response: %w", err)
 	}
@@ -144,7 +143,7 @@ func getNavUID(ctx context.Context, hc *http.Client, cookies string) (int64, err
 		return 0, fmt.Errorf("nav HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp.Body)
 	if err != nil {
 		return 0, fmt.Errorf("read nav response: %w", err)
 	}

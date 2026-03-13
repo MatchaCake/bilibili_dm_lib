@@ -9,15 +9,22 @@ import (
 )
 
 const (
-	roomInitURL   = "https://api.live.bilibili.com/room/v1/Room/room_init?id=%d"
-	danmuInfoURL  = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=%d"
+	roomInitURL    = "https://api.live.bilibili.com/room/v1/Room/room_init?id=%d"
+	danmuInfoURL   = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=%d"
 	defaultWSSHost = "broadcastlv.chat.bilibili.com"
 	defaultWSSPort = 443
+
+	maxResponseBody int64 = 1 << 20 // 1 MB — cap for API response bodies
 )
 
 // roomInfo holds the result of resolving a room ID.
 type roomInfo struct {
 	RealRoomID int64
+}
+
+// readBody reads an HTTP response body with a size cap to prevent OOM from oversized responses.
+func readBody(r io.Reader) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(r, maxResponseBody))
 }
 
 // danmuInfo holds WebSocket connection details.
@@ -46,7 +53,7 @@ func getRoomInfo(ctx context.Context, hc *http.Client, roomID int64, cookies str
 		return nil, fmt.Errorf("room_init HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read room_init response: %w", err)
 	}
@@ -110,7 +117,7 @@ func getDanmuInfoRaw(ctx context.Context, hc *http.Client, realRoomID int64, coo
 		return nil, 0, fmt.Errorf("getDanmuInfo HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp.Body)
 	if err != nil {
 		return nil, 0, fmt.Errorf("read getDanmuInfo response: %w", err)
 	}

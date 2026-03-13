@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -140,7 +139,7 @@ func (s *Sender) sendOne(ctx context.Context, roomID int64, msg string, mode Dan
 		return fmt.Errorf("send HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read send response: %w", err)
 	}

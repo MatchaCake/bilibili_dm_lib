@@ -32,8 +32,9 @@ type Client struct {
 	subs []chan Event
 
 	// Room management.
-	rooms      map[int64]context.CancelFunc // shortRoomID → cancel
+	rooms      map[int64]*roomHandle // shortRoomID → handle
 	roomsMu    sync.Mutex
+	stopped    bool // true once Start begins shutdown
 	parentCtx  context.Context
 	parentMu   sync.Mutex // protects parentCtx
 	wg         sync.WaitGroup
@@ -42,6 +43,12 @@ type Client struct {
 	// Sender (lazily initialised on first SendDanmaku call).
 	sender     *Sender
 	senderOnce sync.Once
+}
+
+// roomHandle wraps a cancel function with pointer identity, so startRoom's
+// cleanup can distinguish its own entry from one re-added by AddRoom.
+type roomHandle struct {
+	cancel context.CancelFunc
 }
 
 // NewClient creates a new danmaku client.
@@ -59,7 +66,7 @@ func NewClient(opts ...Option) *Client {
 	return &Client{
 		config:     cfg,
 		logger:     slog.Default(),
-		rooms:      make(map[int64]context.CancelFunc),
+		rooms:      make(map[int64]*roomHandle),
 		httpClient: hc,
 	}
 }
@@ -158,6 +165,12 @@ func (c *Client) Start(ctx context.Context) error {
 	}
 
 	<-ctx.Done()
+
+	// Prevent new AddRoom calls from racing with wg.Wait.
+	c.roomsMu.Lock()
+	c.stopped = true
+	c.roomsMu.Unlock()
+
 	c.wg.Wait()
 
 	// Close subscriber channels.
@@ -186,15 +199,19 @@ func (c *Client) AddRoom(roomID int64) error {
 	}
 
 	c.roomsMu.Lock()
+	if c.stopped {
+		c.roomsMu.Unlock()
+		return fmt.Errorf("client is stopped")
+	}
 	if _, exists := c.rooms[roomID]; exists {
 		c.roomsMu.Unlock()
 		return fmt.Errorf("room %d already connected", roomID)
 	}
 	// Reserve the slot so concurrent AddRoom calls for the same ID are rejected.
 	c.rooms[roomID] = nil
+	c.wg.Add(1) // under roomsMu to prevent race with wg.Wait in Start
 	c.roomsMu.Unlock()
 
-	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
 		c.startRoom(ctx, roomID)
@@ -206,9 +223,9 @@ func (c *Client) AddRoom(roomID int64) error {
 func (c *Client) RemoveRoom(roomID int64) {
 	c.roomsMu.Lock()
 	defer c.roomsMu.Unlock()
-	if cancel, ok := c.rooms[roomID]; ok {
-		if cancel != nil {
-			cancel()
+	if h, ok := c.rooms[roomID]; ok {
+		if h != nil {
+			h.cancel()
 		}
 		delete(c.rooms, roomID)
 	}
@@ -217,13 +234,17 @@ func (c *Client) RemoveRoom(roomID int64) {
 func (c *Client) startRoom(ctx context.Context, roomID int64) {
 	roomCtx, cancel := context.WithCancel(ctx)
 
+	handle := &roomHandle{cancel: cancel}
 	c.roomsMu.Lock()
-	c.rooms[roomID] = cancel
+	c.rooms[roomID] = handle
 	c.roomsMu.Unlock()
 
 	defer func() {
+		cancel() // always release child context resources
 		c.roomsMu.Lock()
-		delete(c.rooms, roomID)
+		if c.rooms[roomID] == handle { // only remove our own entry
+			delete(c.rooms, roomID)
+		}
 		c.roomsMu.Unlock()
 	}()
 

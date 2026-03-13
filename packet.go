@@ -28,7 +28,10 @@ const (
 	OpCertificateResp uint32 = 8
 )
 
-const headerSize = 16
+const (
+	headerSize         = 16
+	maxDecompressedSize int64 = 10 << 20 // 10 MB — cap decompressed output to prevent decompression bombs
+)
 
 // Packet represents a single Bilibili danmaku protocol packet.
 type Packet struct {
@@ -150,7 +153,7 @@ func decodePackets(data []byte) ([]*Packet, error) {
 
 func decompressBrotli(data []byte) ([]byte, error) {
 	reader := brotli.NewReader(bytes.NewReader(data))
-	return io.ReadAll(reader)
+	return io.ReadAll(io.LimitReader(reader, maxDecompressedSize))
 }
 
 func decompressZlib(data []byte) ([]byte, error) {
@@ -159,5 +162,5 @@ func decompressZlib(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer reader.Close()
-	return io.ReadAll(reader)
+	return io.ReadAll(io.LimitReader(reader, maxDecompressedSize))
 }
