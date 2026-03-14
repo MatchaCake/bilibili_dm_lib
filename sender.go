@@ -37,8 +37,13 @@ type Sender struct {
 	logger     *slog.Logger
 	httpClient *http.Client
 
-	// Per-room rate limiting: roomID → *time.Time (last send time).
-	lastSend sync.Map
+	// Per-room send state keeps cooldown checks and sends serialized.
+	roomStates sync.Map // roomID -> *roomSendState
+}
+
+type roomSendState struct {
+	mu       sync.Mutex
+	lastSend time.Time
 }
 
 // NewSender creates a standalone Sender for sending danmaku without subscribing.
@@ -77,32 +82,35 @@ func (s *Sender) SendWithMode(ctx context.Context, roomID int64, msg string, mod
 	}
 
 	chunks := splitMessage(msg, s.config.maxLength)
+	state := s.roomState(roomID)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
 	for i, chunk := range chunks {
-		if err := s.waitCooldown(ctx, roomID); err != nil {
+		if err := s.waitCooldown(ctx, roomID, state); err != nil {
 			return err
 		}
 		if err := s.sendOne(ctx, roomID, chunk, mode); err != nil {
+			state.lastSend = time.Now()
 			return fmt.Errorf("chunk %d/%d: %w", i+1, len(chunks), err)
 		}
+		state.lastSend = time.Now()
 	}
 	return nil
 }
 
 // waitCooldown blocks until the per-room cooldown has elapsed.
-func (s *Sender) waitCooldown(ctx context.Context, roomID int64) error {
+func (s *Sender) waitCooldown(ctx context.Context, roomID int64, state *roomSendState) error {
 	now := time.Now()
-	if v, ok := s.lastSend.Load(roomID); ok {
-		last := v.(time.Time)
-		wait := s.config.cooldown - now.Sub(last)
-		if wait > 0 {
-			s.logger.Debug("rate limit wait", "room", roomID, "wait", wait)
-			timer := time.NewTimer(wait)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return ctx.Err()
-			case <-timer.C:
-			}
+	wait := s.config.cooldown - now.Sub(state.lastSend)
+	if wait > 0 {
+		s.logger.Debug("rate limit wait", "room", roomID, "wait", wait)
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
 		}
 	}
 	return nil
@@ -153,9 +161,6 @@ func (s *Sender) sendOne(ctx context.Context, roomID int64, msg string, mode Dan
 		return fmt.Errorf("parse send response: %w", err)
 	}
 
-	// Record send time for rate limiting (even on failure, to avoid hammering).
-	s.lastSend.Store(roomID, time.Now())
-
 	if result.Code != 0 {
 		errMsg := result.Message
 		if errMsg == "" {
@@ -166,6 +171,16 @@ func (s *Sender) sendOne(ctx context.Context, roomID int64, msg string, mode Dan
 
 	s.logger.Debug("danmaku sent", "room", roomID, "msg", msg)
 	return nil
+}
+
+func (s *Sender) roomState(roomID int64) *roomSendState {
+	if v, ok := s.roomStates.Load(roomID); ok {
+		return v.(*roomSendState)
+	}
+
+	state := &roomSendState{}
+	actual, _ := s.roomStates.LoadOrStore(roomID, state)
+	return actual.(*roomSendState)
 }
 
 // splitMessage breaks a message into chunks of at most maxLen runes.

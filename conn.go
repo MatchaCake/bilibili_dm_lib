@@ -132,7 +132,7 @@ func (rc *roomConn) connect(ctx context.Context) error {
 		}
 
 		for _, pkt := range packets {
-			rc.dispatch(rc.realRoomID, pkt)
+			rc.dispatch(rc.shortRoomID, pkt)
 		}
 	}
 }
