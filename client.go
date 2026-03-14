@@ -32,7 +32,7 @@ type Client struct {
 	subs []chan Event
 
 	// Room management.
-	rooms      map[int64]*roomHandle // shortRoomID → handle
+	rooms      map[int64]*roomHandle // shortRoomID -> handle
 	roomsMu    sync.Mutex
 	stopped    bool // true once Start begins shutdown
 	parentCtx  context.Context
@@ -152,11 +152,19 @@ func (c *Client) Start(ctx context.Context) error {
 	c.parentCtx = ctx
 	c.parentMu.Unlock()
 
-	if len(c.config.roomIDs) == 0 {
+	c.roomsMu.Lock()
+	roomIDs := uniqueRoomIDs(c.config.roomIDs)
+	c.config.roomIDs = roomIDs
+	if len(roomIDs) == 0 {
+		c.roomsMu.Unlock()
 		return fmt.Errorf("no rooms configured; use WithRoomID or AddRoom")
 	}
+	for _, id := range roomIDs {
+		c.rooms[id] = nil
+	}
+	c.roomsMu.Unlock()
 
-	for _, id := range c.config.roomIDs {
+	for _, id := range roomIDs {
 		c.wg.Add(1)
 		go func(roomID int64) {
 			defer c.wg.Done()
@@ -193,8 +201,11 @@ func (c *Client) AddRoom(roomID int64) error {
 	if ctx == nil {
 		// Not yet started — just add to config.
 		c.roomsMu.Lock()
+		defer c.roomsMu.Unlock()
+		if hasRoomID(c.config.roomIDs, roomID) {
+			return fmt.Errorf("room %d already configured", roomID)
+		}
 		c.config.roomIDs = append(c.config.roomIDs, roomID)
-		c.roomsMu.Unlock()
 		return nil
 	}
 
@@ -223,6 +234,7 @@ func (c *Client) AddRoom(roomID int64) error {
 func (c *Client) RemoveRoom(roomID int64) {
 	c.roomsMu.Lock()
 	defer c.roomsMu.Unlock()
+	c.config.roomIDs = removeRoomID(c.config.roomIDs, roomID)
 	if h, ok := c.rooms[roomID]; ok {
 		if h != nil {
 			h.cancel()
@@ -402,4 +414,36 @@ func generateBuvid3() string {
 		uint16(b[8])<<8|uint16(b[9]),
 		uint64(b[10])<<40|uint64(b[11])<<32|uint64(b[12])<<24|uint64(b[13])<<16|uint64(b[14])<<8|uint64(b[15]),
 	)
+}
+
+func uniqueRoomIDs(roomIDs []int64) []int64 {
+	seen := make(map[int64]struct{}, len(roomIDs))
+	out := make([]int64, 0, len(roomIDs))
+	for _, roomID := range roomIDs {
+		if _, ok := seen[roomID]; ok {
+			continue
+		}
+		seen[roomID] = struct{}{}
+		out = append(out, roomID)
+	}
+	return out
+}
+
+func hasRoomID(roomIDs []int64, roomID int64) bool {
+	for _, id := range roomIDs {
+		if id == roomID {
+			return true
+		}
+	}
+	return false
+}
+
+func removeRoomID(roomIDs []int64, roomID int64) []int64 {
+	out := roomIDs[:0]
+	for _, id := range roomIDs {
+		if id != roomID {
+			out = append(out, id)
+		}
+	}
+	return out
 }
